@@ -1,0 +1,38 @@
+services:
+
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: inven_db
+    volumes:
+      - inven-db-data:/var/lib/mysql
+    networks:
+      - inven-net
+
+  api:
+    image: inven-api:v2
+    container_name: inven-api
+    ports:
+      - "8010:8010"
+    environment:
+      DB_USER: root
+      DB_PASSWORD: rootpass
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: inven_db
+    depends_on:
+      - mysql
+    networks:
+      - inven-net
+
+volumes:
+  inven-db-data:
+    external: true
+    name: inven-db-data
+
+networks:
+  inven-net:
+    external: true
+    name: inven-net
