@@ -1,3 +1,4 @@
+
 name: Inventory API CI
 
 on:
@@ -12,6 +13,20 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ci_root_password
+          MYSQL_DATABASE: inven_db
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci_root_password"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
 
     steps:
       - name: Checkout source code
@@ -30,3 +45,48 @@ jobs:
 
       - name: Build Docker image
         run: docker build -t inventory-api:${{ github.sha }} .
+
+      - name: Initialize database
+        env:
+          DB_USER: root
+          DB_PASSWORD: ci_root_password
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_NAME: inven_db
+        run: python -m app.init_db
+      - name: Start API container
+        run: |
+          docker run -d \
+            --name inventory-api \
+            --network host \
+            -e DB_USER=root \
+            -e DB_PASSWORD=ci_root_password \
+            -e DB_HOST=127.0.0.1 \
+            -e DB_PORT=3306 \
+            -e DB_NAME=inven_db \
+            inventory-api:${{ github.sha }}
+      - name: Wait for API
+        run: |
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8010/; then
+              echo "API is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "API failed to start"
+          docker logs inventory-api
+          exit 1
+
+      - name: Test API endpoints
+        run: |
+          curl -f http://127.0.0.1:8010/
+          curl -f http://127.0.0.1:8010/products
+      - name: Test product creation
+        run: |
+          response=$(curl -fsS -X POST http://127.0.0.1:8010/products \
+            -H "Content-Type: application/json" \
+            -d '{"name":"CI Test Product","quantity":10,"price":99.99}')
+
+          echo "$response"
+          echo "$response" | grep -q "CI Test Product"
